@@ -12,23 +12,28 @@ import matplotlib.pyplot as plt
 
 
 def trajectory_quiver_chart(df, out_dir):
-    """Roll-Pitch trajectory as a quiver plot: arrows show direction,
-    color = speed. Plots raw sensor angles (degrees) directly rather than
-    player_x/player_y, so this reflects actual wrist/hand rotation instead
-    of the game's on-screen mapping of that rotation."""
+    """In-game X-Y trajectory as a quiver plot: arrows show on-screen
+    movement direction, color = on-screen speed. Plots player_x/player_y
+    (what the player actually sees moving on screen), not raw sensor
+    degrees - speed here is computed locally from player_x/player_y so
+    the coloring matches what's plotted, independent of the pitch/roll
+    degree-based "speed" used elsewhere in the report."""
     fig, ax = plt.subplots(figsize=(6, 5))
-    x, y = df["roll"].values, df["pitch"].values
+    x, y = df["player_x"].values, df["player_y"].values
     u, v = np.diff(x, append=x[-1]), np.diff(y, append=y[-1])
-    speed = df["speed"].values if "speed" in df.columns else np.ones(len(x))
+
+    dt = df["t_sec"].diff().fillna(0).replace(0, np.nan).values
+    step_dist = np.sqrt(np.diff(x, prepend=x[0]) ** 2 + np.diff(y, prepend=y[0]) ** 2)
+    game_speed = np.nan_to_num(step_dist / dt, nan=0.0)
 
     q = ax.quiver(
-        x, y, u, v, speed, angles="xy", scale_units="xy", scale=1,
+        x, y, u, v, game_speed, angles="xy", scale_units="xy", scale=1,
         cmap="plasma", width=0.004,
     )
-    fig.colorbar(q, ax=ax, label="Speed (\u00b0/s)")
+    fig.colorbar(q, ax=ax, label="Speed (game units/s)")
     ax.set_title("Movement Trajectory & Direction")
-    ax.set_xlabel("Roll (\u00b0)")
-    ax.set_ylabel("Pitch (\u00b0)")
+    ax.set_xlabel("Player X (in-game)")
+    ax.set_ylabel("Player Y (in-game)")
     ax.set_aspect("equal", adjustable="datalim")
     fig.tight_layout()
 
