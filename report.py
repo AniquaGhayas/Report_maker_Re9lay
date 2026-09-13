@@ -215,6 +215,17 @@ def build_report(metrics: dict, chart_paths: dict, out_path: str,
         ACCENT["score"], styles, doc.width,
     )
 
+    if emg["calibrated"]:
+        emg_amplitude_stats = [
+            ("Mean EMG", _fmt(emg["mean_emg_pct_mvc"], " %MVC")),
+            ("Peak EMG", _fmt(emg["peak_emg_pct_mvc"], " %MVC")),
+        ]
+    else:
+        emg_amplitude_stats = [
+            ("Mean EMG", _fmt(emg["mean_emg"], " raw ADC")),
+            ("Peak EMG", _fmt(emg["peak_emg"], " raw ADC")),
+        ]
+
     story += _stat_group(
         "Muscle Activity (EMG)",
         [
@@ -222,9 +233,7 @@ def build_report(metrics: dict, chart_paths: dict, out_path: str,
             ("Mean Contraction Duration", _fmt(emg["mean_contraction_duration_s"], " s")),
             ("EMG Duty Cycle", _fmt(emg["duty_cycle_pct"], " %")),
             ("Contraction Frequency", _fmt(emg["contraction_freq_per_sec"], " /sec")),
-            ("Mean EMG", _fmt(emg["mean_emg"], " raw ADC")),
-            ("Peak EMG", _fmt(emg["peak_emg"], " raw ADC")),
-        ],
+        ] + emg_amplitude_stats,
         ACCENT["emg"], styles, doc.width,
     )
 

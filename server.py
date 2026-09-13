@@ -45,14 +45,19 @@ async def generate_report(
     csv_file: UploadFile = File(...),
     session_label: str = Form(None),
     emg_threshold: float = Form(400.0),
+    rest_baseline: float = Form(None),
+    max_contraction: float = Form(None),
     logo: UploadFile = File(None),
 ):
     """
     Accepts a session CSV (multipart form field 'csv_file'), an optional
-    'session_label', an optional 'emg_threshold', and an optional 'logo'
-    override image. Uses the bundled logo (assets/logo.png) unless a
-    'logo' file is explicitly uploaded with this request. Returns the
-    generated PDF as the response body.
+    'session_label', an optional 'emg_threshold', optional 'rest_baseline'
+    and 'max_contraction' (from the Unity-side per-session EMG calibration
+    step - when both are provided, EMG amplitude is reported as %MVC
+    instead of raw ADC), and an optional 'logo' override image. Uses the
+    bundled logo (assets/logo.png) unless a 'logo' file is explicitly
+    uploaded with this request. Returns the generated PDF as the response
+    body.
     """
     if not csv_file.filename.lower().endswith(".csv"):
         raise HTTPException(400, "csv_file must be a .csv file")
@@ -76,7 +81,10 @@ async def generate_report(
         label = session_label or os.path.splitext(csv_file.filename)[0]
 
         df = load_session(csv_path)
-        metrics = compute_all_metrics(df, emg_threshold=emg_threshold)
+        metrics = compute_all_metrics(
+            df, emg_threshold=emg_threshold,
+            rest_baseline=rest_baseline, max_contraction=max_contraction,
+        )
 
         chart_dir = os.path.join(work_dir, "charts")
         chart_paths = generate_all_charts(df, metrics, chart_dir, emg_threshold=emg_threshold)

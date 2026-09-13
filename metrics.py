@@ -24,10 +24,20 @@ def load_session(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def compute_emg_metrics(df: pd.DataFrame, emg_threshold: float = 400.0) -> dict:
+def compute_emg_metrics(df: pd.DataFrame, emg_threshold: float = 400.0,
+                         rest_baseline: float = None, max_contraction: float = None) -> dict:
     """EMG contraction metrics. Falls back to shoot_state if it already
     encodes contraction; emg_threshold is used to double-check/derive
-    contraction windows directly from the raw signal."""
+    contraction windows directly from the raw signal.
+
+    If rest_baseline and max_contraction are both provided (from the
+    Unity-side per-session EMG calibration step), also computes %MVC
+    (percent of maximum voluntary contraction) normalized values -
+    the standard way EMG amplitude is reported in the rehab literature,
+    and the only way EMG readings are meaningfully comparable across
+    sessions, across patients, or across different hardware/ADC ranges.
+    Falls back to raw ADC only when calibration data isn't available
+    (e.g. older sessions recorded before calibration was wired up)."""
     contracted = (df["emg_value"] >= emg_threshold).astype(int)
     edges = contracted.diff().fillna(0)
 
@@ -48,15 +58,37 @@ def compute_emg_metrics(df: pd.DataFrame, emg_threshold: float = 400.0) -> dict:
         contraction_count / session_duration if session_duration > 0 else 0.0
     )
 
+    mean_emg_raw = float(df["emg_value"].mean())
+    peak_emg_raw = float(df["emg_value"].max())
+
+    calibrated = (
+        rest_baseline is not None and max_contraction is not None
+        and (max_contraction - rest_baseline) > 1e-6
+    )
+    mean_emg_pct_mvc = None
+    peak_emg_pct_mvc = None
+    if calibrated:
+        mvc_range = max_contraction - rest_baseline
+        mean_emg_pct_mvc = (mean_emg_raw - rest_baseline) / mvc_range * 100
+        peak_emg_pct_mvc = (peak_emg_raw - rest_baseline) / mvc_range * 100
+        # Not clipped to 0-100: a reading below rest baseline (negative %)
+        # or above the calibration max (>100%, if gameplay produced a
+        # harder contraction than the calibration phase did) are both
+        # real, informative results - clipping would hide that.
+
     return {
         "contraction_count": contraction_count,
         "mean_contraction_duration_s": float(np.mean(durations)) if durations else 0.0,
         "duty_cycle_pct": float(duty_cycle),
-        "mean_emg": float(df["emg_value"].mean()),
-        "peak_emg": float(df["emg_value"].max()),
+        "mean_emg": mean_emg_raw,
+        "peak_emg": peak_emg_raw,
+        "mean_emg_pct_mvc": mean_emg_pct_mvc,
+        "peak_emg_pct_mvc": peak_emg_pct_mvc,
+        "calibrated": calibrated,
         "contraction_freq_per_sec": float(freq_per_sec),
         "contracted_mask": contracted,
     }
+
 
 
 def compute_ldlj_windows(df: pd.DataFrame, window_seconds: float = 1.0) -> pd.DataFrame:
@@ -178,9 +210,10 @@ def compute_accuracy_metrics(df: pd.DataFrame) -> dict:
     }
 
 
-def compute_all_metrics(df: pd.DataFrame, emg_threshold: float = 400.0) -> dict:
+def compute_all_metrics(df: pd.DataFrame, emg_threshold: float = 400.0,
+                         rest_baseline: float = None, max_contraction: float = None) -> dict:
     return {
-        "emg": compute_emg_metrics(df, emg_threshold),
+        "emg": compute_emg_metrics(df, emg_threshold, rest_baseline, max_contraction),
         "motion": compute_motion_metrics(df),
         "score": compute_score_metrics(df),
         "accuracy": compute_accuracy_metrics(df),
