@@ -44,8 +44,8 @@ def compute_emg_metrics(df: pd.DataFrame, emg_threshold: float = 400.0) -> dict:
     session_duration = df["t_sec"].iloc[-1] - df["t_sec"].iloc[0]
     duty_cycle = contracted.mean() * 100 if len(contracted) else 0.0
     contraction_count = len(rising)
-    freq_per_min = (
-        contraction_count / (session_duration / 60) if session_duration > 0 else 0.0
+    freq_per_sec = (
+        contraction_count / session_duration if session_duration > 0 else 0.0
     )
 
     return {
@@ -54,7 +54,7 @@ def compute_emg_metrics(df: pd.DataFrame, emg_threshold: float = 400.0) -> dict:
         "duty_cycle_pct": float(duty_cycle),
         "mean_emg": float(df["emg_value"].mean()),
         "peak_emg": float(df["emg_value"].max()),
-        "contraction_freq_per_min": float(freq_per_min),
+        "contraction_freq_per_sec": float(freq_per_sec),
         "contracted_mask": contracted,
     }
 
@@ -102,27 +102,31 @@ def compute_ldlj_windows(df: pd.DataFrame, window_seconds: float = 1.0) -> pd.Da
     return pd.DataFrame(rows) if rows else pd.DataFrame({"t_center": [], "ldlj": []})
 
 
+def _normalize_angle_diff(diff_deg: np.ndarray) -> np.ndarray:
+    """Wrap an array of angle differences into -180..180 degrees. Needed
+    because pitch/roll from the MPU wrap at +/-180 - without this, a
+    reading crossing that boundary (e.g. 178 -> -179) produces a spurious
+    ~357 degree "jump" instead of the real ~3 degree movement."""
+    return (diff_deg + 180) % 360 - 180
+
+
 def compute_motion_metrics(df: pd.DataFrame) -> dict:
-    """Distance, speed, acceleration, jerk, path efficiency, range of motion."""
-    dx = df["player_x"].diff().fillna(0)
-    dy = df["player_y"].diff().fillna(0)
+    """Distance, speed, acceleration, jerk, and range of motion - computed
+    directly from raw pitch/roll (degrees), not from player_x/player_y.
+    This keeps these metrics tied to real physical wrist/hand rotation
+    rather than to whatever arbitrary scale factor Unity uses to map tilt
+    onto on-screen position, so the numbers stay meaningful even if that
+    mapping changes (e.g. switching to threshold-triggered movement)."""
+    d_pitch = _normalize_angle_diff(df["pitch"].diff().fillna(0).values)
+    d_roll = _normalize_angle_diff(df["roll"].diff().fillna(0).values)
     dt = df["t_sec"].diff().fillna(0).replace(0, np.nan)
 
-    step_dist = np.sqrt(dx**2 + dy**2)
-    speed = (step_dist / dt).fillna(0)
-    accel = (speed.diff() / dt).fillna(0)
-    jerk = (accel.diff() / dt).fillna(0)
+    step_dist = np.sqrt(d_pitch ** 2 + d_roll ** 2)  # degrees
+    speed = (step_dist / dt).fillna(0)  # degrees/s
+    accel = (speed.diff() / dt).fillna(0)  # degrees/s^2
+    jerk = (accel.diff() / dt).fillna(0)  # degrees/s^3
 
     total_dist = step_dist.sum()
-    straight_dist = np.sqrt(
-        (df["player_x"].iloc[-1] - df["player_x"].iloc[0]) ** 2
-        + (df["player_y"].iloc[-1] - df["player_y"].iloc[0]) ** 2
-    )
-    # Path efficiency (a.k.a. hand path ratio / index of curvature), using
-    # the convention standard in the stroke kinematics literature: actual
-    # path length over straight-line distance, as a percentage. 100% =
-    # perfectly straight; higher = more curved/inefficient movement.
-    path_efficiency_pct = (total_dist / straight_dist * 100) if straight_dist > 0 else 100.0
 
     df["speed"] = speed
     df["accel"] = accel
@@ -135,7 +139,6 @@ def compute_motion_metrics(df: pd.DataFrame) -> dict:
         "total_distance": float(total_dist),
         "mean_speed": float(speed.mean()),
         "peak_speed": float(speed.max()),
-        "path_efficiency_pct": float(path_efficiency_pct),
         "overall_ldlj": overall_ldlj,
         "ldlj_windows": ldlj_windows,
         "pitch_range": (float(df["pitch"].min()), float(df["pitch"].max())),

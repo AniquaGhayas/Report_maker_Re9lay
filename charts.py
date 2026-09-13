@@ -12,9 +12,12 @@ import matplotlib.pyplot as plt
 
 
 def trajectory_quiver_chart(df, out_dir):
-    """X-Y trajectory as a quiver plot: arrows show direction, color = speed."""
+    """Roll-Pitch trajectory as a quiver plot: arrows show direction,
+    color = speed. Plots raw sensor angles (degrees) directly rather than
+    player_x/player_y, so this reflects actual wrist/hand rotation instead
+    of the game's on-screen mapping of that rotation."""
     fig, ax = plt.subplots(figsize=(6, 5))
-    x, y = df["player_x"].values, df["player_y"].values
+    x, y = df["roll"].values, df["pitch"].values
     u, v = np.diff(x, append=x[-1]), np.diff(y, append=y[-1])
     speed = df["speed"].values if "speed" in df.columns else np.ones(len(x))
 
@@ -22,10 +25,10 @@ def trajectory_quiver_chart(df, out_dir):
         x, y, u, v, speed, angles="xy", scale_units="xy", scale=1,
         cmap="plasma", width=0.004,
     )
-    fig.colorbar(q, ax=ax, label="Speed")
+    fig.colorbar(q, ax=ax, label="Speed (\u00b0/s)")
     ax.set_title("Movement Trajectory & Direction")
-    ax.set_xlabel("Player X (from roll)")
-    ax.set_ylabel("Player Y (from pitch)")
+    ax.set_xlabel("Roll (\u00b0)")
+    ax.set_ylabel("Pitch (\u00b0)")
     ax.set_aspect("equal", adjustable="datalim")
     fig.tight_layout()
 
@@ -40,7 +43,7 @@ def range_of_motion_radar(motion_metrics, out_dir):
     pitch_min, pitch_max = motion_metrics["pitch_range"]
     roll_min, roll_max = motion_metrics["roll_range"]
 
-    labels = ["Pitch +", "Roll +", "Pitch -", "Roll -"]
+    labels = ["Pitch + (\u00b0)", "Roll + (\u00b0)", "Pitch - (\u00b0)", "Roll - (\u00b0)"]
     values = [max(pitch_max, 0), max(roll_max, 0), abs(min(pitch_min, 0)), abs(min(roll_min, 0))]
     values += values[:1]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
@@ -73,7 +76,7 @@ def score_vs_time_chart(df, score_metrics, out_dir):
 
     ax.set_title("Score Over Time (dashed lines = speed tier change)")
     ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Score")
+    ax.set_ylabel("Score (pts)")
     fig.tight_layout()
 
     path = os.path.join(out_dir, "score_vs_time.png")
@@ -94,7 +97,7 @@ def emg_threshold_chart(df, emg_threshold, out_dir):
 
     ax.set_title("EMG Signal & Contraction Windows")
     ax.set_xlabel("Time (s)")
-    ax.set_ylabel("EMG Value")
+    ax.set_ylabel("EMG Value (raw ADC)")
     ax.legend(loc="upper right", fontsize=8)
     fig.tight_layout()
 
@@ -112,17 +115,17 @@ def kinematics_stack_chart(df, ldlj_windows, out_dir):
     fig, axes = plt.subplots(3, 1, figsize=(7, 6.5), sharex=True)
 
     axes[0].plot(df["t_sec"], df["speed"], color="#2a6fdb", linewidth=1)
-    axes[0].set_ylabel("Speed")
+    axes[0].set_ylabel("Speed\n(\u00b0/s)")
     axes[0].grid(alpha=0.2)
 
     axes[1].plot(df["t_sec"], df["accel"], color="#e08e0b", linewidth=1)
-    axes[1].set_ylabel("Acceleration")
+    axes[1].set_ylabel("Acceleration\n(\u00b0/s\u00b2)")
     axes[1].grid(alpha=0.2)
 
     if len(ldlj_windows):
         axes[2].plot(ldlj_windows["t_center"], ldlj_windows["ldlj"],
                      color="#8e44ad", linewidth=1.5, marker="o", markersize=3)
-    axes[2].set_ylabel("Smoothness\n(LDLJ)")
+    axes[2].set_ylabel("Smoothness\n(LDLJ, dimensionless)")
     axes[2].grid(alpha=0.2)
 
     axes[-1].set_xlabel("Time (s)")
